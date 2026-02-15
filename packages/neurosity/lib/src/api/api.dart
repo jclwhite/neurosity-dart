@@ -22,8 +22,17 @@ class ApiClient extends Client {
   Future<void> connect() => client.connect();
 
   @override
+  Future<void> disconnect() => client.disconnect();
+
+  @override
   Future<void> login(NeurosityCredentials credentials) =>
       client.login(credentials);
+
+  @override
+  Future<void> logout() => client.logout();
+
+  @override
+  Stream<bool> onAuthStateChanged() => client.onAuthStateChanged();
 
   @override
   Future<List<Device>> getDevices() => client.getDevices();
@@ -55,4 +64,7 @@ class ApiClient extends Client {
   @override
   Future<Device?> selectDevice(String deviceId) =>
       client.selectDevice(deviceId);
+
+  @override
+  Device? getSelectedDevice() => client.getSelectedDevice();
 }

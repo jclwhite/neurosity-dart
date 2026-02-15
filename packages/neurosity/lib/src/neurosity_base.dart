@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:neurosity/src/api/api.dart';
+import 'package:neurosity/src/api/client.dart';
 import 'package:neurosity/src/api/firebase/firebase.dart';
 import 'package:neurosity/src/models/models.dart';
 import 'package:neurosity/src/utils/subscription.dart';
@@ -8,29 +9,55 @@ import 'package:neurosity/src/utils/subscription.dart';
 /// Neurosity main class
 class Neurosity {
   /// Constructor
-  Neurosity([
+  Neurosity({
     this.options = const NeurosityOptions(),
-  ]);
+    Client? client,
+  }) : _client = client;
 
   /// options
   final NeurosityOptions options;
+  final Client? _client;
   late final ApiClient _api;
 
   ///
   Future<void> connect() async {
-    final _client = NeurosityFirebase();
-    await _client.connect();
-    _api = ApiClient(options, _client);
+    final client = _client ?? NeurosityFirebase();
+    await client.connect();
+    _api = ApiClient(options, client);
   }
 
   ///
-  Future<void> disconnect() async {}
+  Future<void> disconnect() => _api.disconnect();
 
   ///
   Future<void> login(
     NeurosityCredentials credentials,
-  ) =>
-      _api.login(credentials);
+  ) async {
+    await _api.login(credentials);
+
+    if (!options.autoSelectDevice) {
+      return;
+    }
+
+    if (options.deviceId != null) {
+      await selectDevice(options.deviceId!);
+      return;
+    }
+
+    final devices = await getDevices();
+    if (devices.isNotEmpty) {
+      await selectDevice(devices.first.deviceId);
+    }
+  }
+
+  ///
+  Future<void> logout() => _api.logout();
+
+  ///
+  Stream<bool> onAuthStateChanged() => _api.onAuthStateChanged();
+
+  ///
+  Device? getSelectedDevice() => _api.getSelectedDevice();
 
   /// Select Device
   ///
@@ -170,7 +197,7 @@ class Neurosity {
     }
     return _api.onMetric(
       metric: metric.name,
-      label: atomic && label != null ? label.name : '',
+      label: !atomic && label != null ? label.name : '',
       atomic: atomic,
     );
   }

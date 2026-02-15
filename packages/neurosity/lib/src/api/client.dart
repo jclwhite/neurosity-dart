@@ -35,7 +35,16 @@ abstract class Client {
   Future<void> connect();
 
   ///
+  Future<void> disconnect();
+
+  ///
   Future<void> login(NeurosityCredentials credentials);
+
+  ///
+  Future<void> logout();
+
+  ///
+  Stream<bool> onAuthStateChanged();
 
   ///
   Future<List<Device>> getDevices();
@@ -45,6 +54,9 @@ abstract class Client {
 
   ///
   Future<Device?> selectDevice(String deviceId);
+
+  ///
+  Device? getSelectedDevice();
 
   ///
   Stream<Device?> onSelectedDeviceChange();

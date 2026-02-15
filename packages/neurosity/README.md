@@ -1,130 +1,85 @@
 # Neurosity Dart SDK
 
-The Neurosity software processes and manages the data produced by [Neurosity headsets](https://neurosity.co) which measures, tracks and monitors EEG brainwaves.
+The Neurosity SDK for Dart provides a typed interface for Neurosity headsets, including authentication, device selection, and real-time metrics streams.
 
-## How to use
+## Installation
 
-1- first install the package from `pub.dev`
-
-```dart
- pub get neurosity
+```bash
+dart pub add neurosity
 ```
 
-2- Create a new instance of Neurosity
-
-```dart
- final neurosity = Neurosity();
-```
-
-3- You need to make sure you are connected to the the server before you start doing anything
-
-```dart
-  await neurosity.connect();
-```
-
-4- Once the connection is successful then you need to login to your account
-
-```dart
-await neurosity.login(
-    NeurosityCredentials.withEmail(
-      email: 'xxx@xxx.xxx',
-      password: 'xxxx',
-    ),
-  );
-```
-
-5- Now you can interact with your devices or your selected device ID for example
-
-```dart
-
-  final devices = await neurosity.getDevices();
-  print(devices);
-
-
-  final device = await neurosity.selectDevice(
-    'DeviceID', // you can grab that from console or from list of devices
-  );
-  print('select $device');
-
-```
-
-## Example
+## Quick Start
 
 ```dart
 import 'package:neurosity/neurosity.dart';
 
 Future<void> main() async {
-  final neurosity = Neurosity();
-
-  await neurosity.connect();
-
-  await neurosity.login(
-    NeurosityCredentials.withEmail(
-      email: const String.fromEnvironment('EMAIL'),
-      password: const String.fromEnvironment('PASSWORD'),
+  final neurosity = Neurosity(
+    options: const NeurosityOptions(
+      // Optional: when set, this device is selected automatically after login.
+      deviceId: 'DEVICE_ID',
+      // Optional: disable to manually select a device after login.
+      autoSelectDevice: true,
     ),
   );
 
-  final devices = await neurosity.getDevices();
-  print(devices);
+  await neurosity.connect();
 
-  final device = await neurosity.selectDevice(
-     const String.fromEnvironment('DEVICE'),
+  // Supports email/password, custom tokens, and idToken/providerId auth.
+  await neurosity.login(
+    NeurosityCredentials.withEmail(
+      email: 'you@example.com',
+      password: 'password',
+    ),
   );
 
-  print('select $device');
+  // Emits true/false based on authentication state.
+  final authSub = neurosity.onAuthStateChanged().listen(print);
 
-  neurosity.onSelectedDeviceChange().listen(
-    (device) {
-      print('onChange $device');
-    },
-  );
+  // Access selected device (selected automatically by default).
+  final selectedDevice = neurosity.getSelectedDevice();
+  print(selectedDevice);
 
-  neurosity.onStatus().listen((deviceStatus) {
-    print('onStatus $deviceStatus');
-  });
+  // Subscribe to metrics.
+  final focusSub = neurosity.focus().listen(print);
 
-  neurosity.onSettingsChange().listen((deviceStatus) {
-    print('onSettingsChange $deviceStatus');
-  });
+  await Future<void>.delayed(const Duration(seconds: 5));
 
-  neurosity.brainwaves(BrainwavesLabel.psd).listen((metric) {
-    print('brainwaves $metric');
-  });
-
-  neurosity.accelerometer().listen((metric) {
-    print('accelerometer $metric');
-  });
-
-  neurosity.awareness(AwarenessLabel.focus).listen((metric) {
-    print('awareness $metric');
-  });
-
-   neurosity.focus().listen((metric) {
-     print('focus $metric');
-   });
-
-   neurosity.calm().listen((metric) {
-     print('calm $metric');
-   });
-
-  neurosity.kinesis(KinesisLabel.tongue).listen((metric) {
-    print('kinesis $metric');
-  });
-
-  neurosity.predictions(KinesisLabel.disappear).listen((metric) {
-    print('predictions $metric');
-  });
-
-  neurosity.signalQuality().listen((metric) {
-    print('KinesisLabel.disappear $metric');
-  });
+  await focusSub.cancel();
+  await authSub.cancel();
+  await neurosity.logout();
+  await neurosity.disconnect();
 }
-
 ```
 
-## Quick test
+## Device Selection Behavior
 
-You can run `dart run --define EMAIL=XXX --define PASSWORD=XXX --define DEVICE=XXX example/neurosity_example.dart`
+By default (`autoSelectDevice: true`), the SDK selects:
 
-Replace XXX with valid credentials.
+1. `options.deviceId` when provided.
+2. Otherwise, the first device returned by `getDevices()`.
+
+Set `autoSelectDevice: false` to opt out and call `selectDevice(...)` manually.
+
+## Available Streams
+
+- `onSelectedDeviceChange()`
+- `onStatus()`
+- `onSettingsChange()`
+- `brainwaves(...)`
+- `signalQuality()`
+- `channelAnalysis()`
+- `accelerometer()`
+- `awareness(...)`
+- `focus()`
+- `calm()`
+- `kinesis(...)`
+- `predictions(...)`
+
+## Testing
+
+Run tests from the package directory:
+
+```bash
+dart test
+```

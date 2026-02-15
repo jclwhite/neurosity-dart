@@ -24,36 +24,68 @@ class NeurosityFirebase extends Client {
   Future<void> connect() async {
     await Firebase.initializeApp(options: _firebaseOptions);
     _app = FirebaseAuth.instance;
-    final token = await _app.currentUser!.getIdToken();
-    _database = FirebaseClient(token);
   }
 
   late final FirebaseAuth _app;
-  late final FirebaseClient _database;
 
   Device? _selectedDevice;
+  Timer? _deviceChangesTimer;
+  Timer? _deviceStatusTimer;
+  Timer? _deviceSettingsTimer;
+  Timer? _metricsTimer;
+
   final _deviceChanges = StreamController<Device?>.broadcast();
   final _deviceStatus = StreamController<DeviceStatus?>.broadcast();
   final _deviceSettings = StreamController<DeviceSetting?>.broadcast();
   final _metrics = StreamController<Metric?>.broadcast();
 
+  FirebaseClient _database(String token) => FirebaseClient(token);
+
+  @override
+  Future<void> disconnect() async {
+    _deviceChangesTimer?.cancel();
+    _deviceStatusTimer?.cancel();
+    _deviceSettingsTimer?.cancel();
+    _metricsTimer?.cancel();
+    await logout();
+  }
+
   @override
   Future<void> login(NeurosityCredentials credentials) async {
     if (validateEmailPassword(credentials)) {
-      // at this point we are 100% email and password are valid
       await _app.signInWithEmailAndPassword(
         credentials.email!,
         credentials.password!,
       );
+      return;
     }
 
     if (validateIdTokenAndProviderId(credentials)) {
-      throw UnimplementedError();
+      final provider = OAuthProvider(credentials.providerId!);
+      final credential = provider.credential(idToken: credentials.idToken);
+      await _app.signInWithCredential(credential);
+      return;
     }
 
     if (validateCustomToken(credentials)) {
-      throw UnimplementedError();
+      await _app.signInWithCustomToken(credentials.customToken!);
+      return;
     }
+
+    throw ArgumentError(
+      'Credentials must include email/password, idToken/providerId, or customToken.',
+    );
+  }
+
+  @override
+  Future<void> logout() async {
+    await _app.signOut();
+    _selectedDevice = null;
+  }
+
+  @override
+  Stream<bool> onAuthStateChanged() {
+    return _app.authStateChanges().map((user) => user != null);
   }
 
   Future<String> _getDBPath(String path) async {
@@ -66,10 +98,12 @@ class NeurosityFirebase extends Client {
     String path,
   ) async {
     if (_app.currentUser == null) {
-      throw Exception('User is not login!');
+      throw Exception('User is not logged in.');
     }
+    final token = await _app.currentUser!.getIdToken();
+    final db = _database(token);
     final devicePath = await _getDBPath('devices/$deviceId/$path');
-    final response = await _database.get(devicePath) as Map<String, dynamic>?;
+    final response = await db.get(devicePath) as Map<String, dynamic>?;
     return response;
   }
 
@@ -80,7 +114,7 @@ class NeurosityFirebase extends Client {
     bool atomic,
   ) async {
     if (_app.currentUser == null) {
-      throw Exception('User is not login!');
+      throw Exception('User is not logged in.');
     }
     const metricPath = 'metrics';
     final String path;
@@ -120,12 +154,17 @@ class NeurosityFirebase extends Client {
   @override
   Future<List<Device>> getDevices() async {
     if (_app.currentUser == null) {
-      throw Exception('User is not login!');
+      throw Exception('User is not logged in.');
     }
+    final token = await _app.currentUser!.getIdToken();
+    final db = _database(token);
     final userId = _app.currentUser!.uid;
     final userIdDevicesPath = await _getDBPath('users/$userId/devices');
-    final response = await _database.get(userIdDevicesPath);
-    final obj = response as Map<String, dynamic>;
+    final response = await db.get(userIdDevicesPath);
+    final obj = response as Map<String, dynamic>?;
+    if (obj == null) {
+      return <Device>[];
+    }
     final deviceIds = obj.keys;
     final devices = <Device>[];
 
@@ -150,13 +189,17 @@ class NeurosityFirebase extends Client {
   }
 
   @override
+  Device? getSelectedDevice() => _selectedDevice;
+
+  @override
   Stream<Device?> onSelectedDeviceChange() {
-    Timer.periodic(
+    _deviceChangesTimer?.cancel();
+    _deviceChangesTimer = Timer.periodic(
       const Duration(seconds: 1),
       (timer) async {
         if (_selectedDevice != null) {
-          final _updatedDevice = await getDevice(_selectedDevice!.deviceId);
-          _deviceChanges.add(_updatedDevice);
+          final updatedDevice = await getDevice(_selectedDevice!.deviceId);
+          _deviceChanges.add(updatedDevice);
         }
       },
     );
@@ -165,14 +208,15 @@ class NeurosityFirebase extends Client {
 
   @override
   Stream<DeviceStatus?> onStatus() {
-    Timer.periodic(
+    _deviceStatusTimer?.cancel();
+    _deviceStatusTimer = Timer.periodic(
       const Duration(seconds: 1),
       (timer) async {
         if (_selectedDevice != null) {
-          final _updated = await getDeviceStatus(
+          final updated = await getDeviceStatus(
             _selectedDevice!.deviceId,
           );
-          _deviceStatus.add(_updated);
+          _deviceStatus.add(updated);
         }
       },
     );
@@ -182,14 +226,15 @@ class NeurosityFirebase extends Client {
 
   @override
   Stream<DeviceSetting?> onSettingsChange() {
-    Timer.periodic(
+    _deviceSettingsTimer?.cancel();
+    _deviceSettingsTimer = Timer.periodic(
       const Duration(seconds: 1),
       (timer) async {
         if (_selectedDevice != null) {
-          final _updated = await getDeviceSetting(
+          final updated = await getDeviceSetting(
             _selectedDevice!.deviceId,
           );
-          _deviceSettings.add(_updated);
+          _deviceSettings.add(updated);
         }
       },
     );
@@ -203,17 +248,18 @@ class NeurosityFirebase extends Client {
     String? label,
     required bool atomic,
   }) {
-    Timer.periodic(
+    _metricsTimer?.cancel();
+    _metricsTimer = Timer.periodic(
       const Duration(seconds: 1),
       (timer) async {
         if (_selectedDevice != null) {
-          final _updated = await _getDeviceMetric(
+          final updated = await _getDeviceMetric(
             _selectedDevice!.deviceId,
             metric,
             label ?? '',
             atomic,
           );
-          _metrics.add(_updated);
+          _metrics.add(updated);
         }
       },
     );
